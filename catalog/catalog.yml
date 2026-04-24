@@ -1,0 +1,144 @@
+version: 1
+project: netflix-pipeline-gcp
+description: Catálogo de dados do pipeline MovieLens Beliefs 2024
+
+# ==============================================================
+# CAMADA BRONZE — Tabelas externas (dados brutos do GCS)
+# ==============================================================
+bronze:
+
+  raw_movies:
+    description: Informações dos filmes disponíveis no MovieLens.
+    columns:
+      movieId: Identificador único do filme.
+      title: Título do filme, podendo conter o ano de lançamento entre parênteses.
+      genres: Gêneros do filme separados por pipe (|).
+
+  raw_user_rating_history:
+    description: Histórico de avaliações feitas pelos usuários no MovieLens.
+    columns:
+      userId: Identificador anônimo do usuário.
+      movieId: Identificador do filme avaliado.
+      rating: Nota dada ao filme, escala de 0.5 a 5.0 com incrementos de 0.5.
+      tstamp: Timestamp da avaliação em segundos desde 1970-01-01 UTC.
+
+  raw_ratings_for_additional_users:
+    description: Avaliações de usuários adicionais incluídos na atualização de fev/2025.
+    columns:
+      userId: Identificador anônimo do usuário.
+      movieId: Identificador do filme avaliado.
+      rating: Nota dada ao filme, escala de 0.5 a 5.0 com incrementos de 0.5.
+      tstamp: Timestamp da avaliação em segundos desde 1970-01-01 UTC.
+
+  raw_belief_data:
+    description: Dados de crenças elicitadas — ratings esperados de filmes não assistidos.
+    columns:
+      userId: Identificador anônimo do usuário.
+      movieId: Identificador do filme exibido na elicitação.
+      isSeen: Indicador se o filme foi assistido. -1=sem resposta, 0=não assistiu, 1=assistiu.
+      watchDate: Data aproximada em que o usuário assistiu ao filme (preenchido só se isSeen=1).
+      userElicitRating: Nota real do usuário para o filme (preenchido só se isSeen=1).
+      userPredictRating: Nota esperada do usuário para o filme (preenchido só se isSeen=0).
+      userCertainty: Certeza do usuário sobre o rating esperado, escala de 1.0 a 5.0 (preenchido só se isSeen=0).
+      tstamp: Timestamp da elicitação em segundos desde 1970-01-01 UTC.
+      month_idx: Índice do mês em que o filme foi incluído no conjunto de elicitação.
+      source: Origem do filme na elicitação. 1=amostragem ampla, 2=com possível recomendação, 3=filmes novos.
+      systemPredictRating: Rating previsto pelo sistema de recomendação para o par usuário-filme.
+
+  raw_movie_elicitation_set:
+    description: Conjunto de filmes utilizados no processo de elicitação de crenças.
+    columns:
+      movieId: Identificador do filme no conjunto de elicitação.
+      month_idx: Índice do mês em que o filme fez parte do conjunto de elicitação.
+      source: Critério de seleção do filme. 1=Popularidade, 2=Rating, 3=Lançamentos populares, 4=Lançamentos em alta, 5=Serendipidade.
+      tstamp: Timestamp da atualização do conjunto de elicitação.
+
+  raw_user_recommendation_history:
+    description: Histórico de recomendações exibidas aos usuários pelo sistema do MovieLens.
+    columns:
+      userId: Identificador anônimo do usuário.
+      tstamp: Timestamp da recomendação em segundos desde 1970-01-01 UTC.
+      movieId: Identificador do filme recomendado.
+      predictedRating: Rating previsto pelo sistema de recomendação para o usuário.
+
+# ==============================================================
+# CAMADA SILVER — Tabelas nativas (limpas e tipadas)
+# ==============================================================
+silver:
+
+  dim_movies:
+    description: Dimensão de filmes com tipos de dados corrigidos e ano de lançamento extraído.
+    columns:
+      movie_id: Identificador único do filme (INT64).
+      title: Título do filme.
+      genres: Gêneros do filme separados por pipe (|).
+      release_year: Ano de lançamento extraído do título via REGEXP_EXTRACT (INT64).
+
+  fact_ratings:
+    description: Fato de avaliações unificando duas fontes de ratings com limpeza e tipagem.
+    columns:
+      user_id: Identificador anônimo do usuário (INT64).
+      movie_id: Identificador do filme avaliado (INT64).
+      rating: Nota dada ao filme, escala de 0.5 a 5.0 (FLOAT64).
+      rating_ts: Timestamp da avaliação convertido para TIMESTAMP.
+      src: Fonte da avaliação. 'user_rating_history' ou 'rating_for_additional_users'.
+
+# ==============================================================
+# CAMADA GOLD — Views analíticas para o Metabase
+# ==============================================================
+gold:
+
+  vw_movies_kpis:
+    description: KPIs por filme com métricas agregadas de avaliação.
+    columns:
+      movie_id: Identificador do filme.
+      title: Título do filme.
+      genres: Gêneros do filme.
+      release_year: Ano de lançamento do filme.
+      total_rating: Total de avaliações recebidas pelo filme.
+      avg_rating: Média das avaliações do filme.
+      std_rating: Desvio padrão das avaliações do filme.
+      first_rating_ts: Timestamp da primeira avaliação recebida.
+      last_rating_ts: Timestamp da última avaliação recebida.
+
+  vw_genre_performance:
+    description: Performance e volume de avaliações agrupados por gênero.
+    columns:
+      genre: Nome do gênero do filme.
+      total_movies: Total de filmes do gênero.
+      total_ratings: Total de avaliações do gênero.
+      avg_rating: Média das avaliações do gênero.
+
+  vw_ratings_heatmap:
+    description: Volume de avaliações agrupado por mês e ano para visualização em heatmap.
+    columns:
+      year: Ano da avaliação.
+      month: Mês da avaliação.
+      total_ratings: Total de avaliações no período.
+
+  vw_top_movies:
+    description: Ranking dos filmes mais avaliados com métricas de qualidade.
+    columns:
+      movie_id: Identificador do filme.
+      title: Título do filme.
+      genres: Gêneros do filme.
+      total_rating: Total de avaliações recebidas.
+      avg_rating: Média das avaliações.
+
+  vw_user_activity:
+    description: Atividade e engajamento dos usuários na plataforma.
+    columns:
+      user_id: Identificador do usuário.
+      total_ratings: Total de avaliações feitas pelo usuário.
+      avg_rating: Média das avaliações do usuário.
+      first_rating_ts: Timestamp da primeira avaliação do usuário.
+      last_rating_ts: Timestamp da última avaliação do usuário.
+
+  vw_scatter_popularity_vs_quality:
+    description: Filmes com 50 ou mais avaliações para análise de popularidade versus qualidade.
+    columns:
+      movie_id: Identificador do filme.
+      title: Título do filme.
+      genres: Gêneros do filme.
+      total_rating: Total de avaliações recebidas (mínimo 50).
+      avg_rating: Média das avaliações do filme.

@@ -3,7 +3,7 @@ SELECT
   movie_id,
   title,
   genres,
-  total_avaliacoes,
-  media_rating
+  total_rating,
+  avg_rating
 FROM `netflix-pipeline-gcp.netflix_analytical.vw_movies_kpis`
-WHERE total_avaliacoes >= 50;
+WHERE total_rating >= 50;

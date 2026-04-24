@@ -1,13 +1,14 @@
 CREATE OR REPLACE EXTERNAL TABLE `netflix-pipeline-gcp.netflix_raw.raw_movie_elicitation_set`
 (
-  movieId STRING,
-  title   STRING,
-  genres  STRING
+  movieId   STRING,
+  month_idx STRING,
+  source    STRING,
+  tstamp    STRING
 )
 OPTIONS (
-  format = 'CSV',
-  uris   = ['gs://raw_movies_netflix/bronze_movies/movie_elicitation_set.csv'],
-  skip_leading_rows = 1,
+  format                = 'CSV',
+  uris                  = ['gs://netflix-pipeline-gcp-raw/bronze_movies/movie_elicitation_set.csv'],
+  skip_leading_rows     = 1,
   allow_quoted_newlines = TRUE,
-  allow_jagged_rows = TRUE
+  allow_jagged_rows     = TRUE
 );

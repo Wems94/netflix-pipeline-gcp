@@ -1,8 +1,8 @@
 CREATE OR REPLACE TABLE `netflix-pipeline-gcp.netflix_analytical.fact_ratings` AS
 WITH all_ratings AS (
   SELECT 
-    SAFE_CAST(NULLIF(userId, '') AS INT64) AS user_id,
-    SAFE_CAST(NULLIF(movieId, '') AS INT64) AS movie_id,
+    SAFE_CAST(NULLIF(userId, '') AS INT64) AS user_Id,
+    SAFE_CAST(NULLIF(movieId, '') AS INT64) AS movie_Id,
 
 
     -- remove NA/ null
@@ -22,8 +22,8 @@ WITH all_ratings AS (
   UNION ALL
 
   select 
-    SAFE_CAST(NULLIF(userId,'') AS INT64) AS user_id,
-    SAFE_CAST(NULLIF(movieId,'') AS INT64) AS movie_id,
+    SAFE_CAST(NULLIF(userId,'') AS INT64) AS user_Id,
+    SAFE_CAST(NULLIF(movieId,'') AS INT64) AS movie_Id,
 
     SAFE_CAST(NULLIF(NULLIF(rating, 'NA'),'')AS FLOAT64) AS rating,
 
@@ -40,13 +40,13 @@ WITH all_ratings AS (
 )
 
 SELECT
-  user_id,
-  movie_id,
+  user_Id,
+  movie_Id,
   rating,
   rating_ts,
   src 
 FROM all_ratings
-WHERE user_id IS NOT NULL
-  AND movie_id IS NOT NULL
+WHERE user_Id IS NOT NULL
+  AND movie_Id IS NOT NULL
   AND rating IS NOT NULL
   AND rating_ts IS NOT NULL;
