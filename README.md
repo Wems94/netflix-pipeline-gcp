@@ -1,217 +1,228 @@
----
-
-![Netflix](https://img.shields.io/badge/Netflix-E50914?style=for-the-badge&logo=netflix&logoColor=white) 
-![SQL](https://img.shields.io/badge/sql-%2300758F.svg?style=for-the-badge&logo=mysql&logoColor=white)
+![Netflix](https://img.shields.io/badge/Netflix-E50914?style=for-the-badge&logo=netflix&logoColor=white)
+![SQL](https://img.shields.io/badge/SQL-%2300758F.svg?style=for-the-badge&logo=mysql&logoColor=white)
 ![GCP](https://img.shields.io/badge/Google_Cloud-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white)
-![BigQuery](https://img.shields.io/badge/Google_BigQuery-4285F4?style=for-the-badge&logo=google-bigquery&logoColor=white)
-![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)
-![Metabase](https://img.shields.io/badge/Metabase-509EE3?style=for-the-badge&logo=Metabase&logoColor=white)
-![Data Lake](https://img.shields.io/badge/Data_Lake-0080FF?style=for-the-badge&logo=google-cloud-storage&logoColor=white)
+![BigQuery](https://img.shields.io/badge/BigQuery-4285F4?style=for-the-badge&logo=google-bigquery&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)
+![Metabase](https://img.shields.io/badge/Metabase-509EE3?style=for-the-badge&logo=metabase&logoColor=white)
 
 ---
 
-# Ingestão de Dados com BigQuery e Metabase: Arquitetura Bronze, Silver e Gold
+# Pipeline de Dados com BigQuery e Metabase — Arquitetura Medallion (Bronze, Silver e Gold)
 
-Este projeto demonstra a construção de um pipeline de dados ponta a ponta, utilizando o dataset do MovieLens para criar uma plataforma de analytics de filmes.
+Pipeline de dados ponta a ponta utilizando o dataset **MovieLens Beliefs 2024** para construção de uma plataforma de analytics de filmes, com modelagem dimensional no BigQuery e visualização via Metabase.
+
+> Projeto baseado no [Desafio Técnico 01](https://meadow-squid-e0b.notion.site/Desafio-t-cnico-01-Case-real-com-BigQuery-e-Metabase-8f920ba56c5a829e926481d46d4156c4) da comunidade **Dados Por Todos**.
+
+---
+
+## 🗂️ Estrutura do Repositório
+
+```
+netflix-pipeline-gcp/
+├── data/                        # Dataset local (não versionado)
+│   └── data_release/
+│       ├── movies.csv
+│       ├── belief_data.csv
+│       ├── user_rating_history.csv
+│       ├── ratings_for_additional_users.csv
+│       ├── movie_elicitation_set.csv
+│       └── user_recommendation_history.csv
+├── sql/
+│   ├── bronze/                  # Tabelas externas (raw)
+│   │   ├── raw_movies.sql
+│   │   ├── raw_belief_data.sql
+│   │   ├── raw_user_rating_history.sql
+│   │   ├── raw_ratings_for_additional_users.sql
+│   │   ├── raw_movie_elicitation_set.sql
+│   │   └── raw_user_recommendation_history.sql
+│   ├── silver/                  # Tabelas nativas (limpas e tipadas)
+│   │   ├── dim_movies.sql
+│   │   └── fact_ratings.sql
+│   └── gold/                    # Views analíticas para o Metabase
+│       ├── vw_movies_kpis.sql
+│       ├── vw_genre_performance.sql
+│       ├── vw_ratings_heatmap.sql
+│       ├── vw_top_movies.sql
+│       ├── vw_user_activity.sql
+│       └── vw_scatter_popularity_vs_quality.sql
+├── movielens_dataset_readme.md  # Documentação do dataset
+└── README.md
+```
+
+---
 
 ## 🛠️ Tecnologias Utilizadas
 
-- Google Cloud Storage (GCS): Armazenamento dos arquivos raw.
+| Tecnologia | Finalidade |
+|---|---|
+| **Google Cloud Storage (GCS)** | Armazenamento dos arquivos CSV (camada raw) |
+| **BigQuery** | Data Warehouse — processamento e modelagem SQL |
+| **Docker** | Containerização do Metabase |
+| **Metabase** | Ferramenta de BI para criação de dashboards |
+| **SQL** | Transformação e modelagem dimensional |
+| **gcloud CLI** | Gerenciamento do GCP via terminal |
 
-- BigQuery: Data Warehouse para processamento e modelagem SQL.
+---
 
-- Docker: Containerização do ambiente de visualização.
+## 🏗️ Arquitetura Medallion
 
-- Metabase: Ferramenta de BI para criação de dashboards.
+O projeto segue a arquitetura Medallion, dividida em três camadas que garantem rastreabilidade, qualidade e reusabilidade dos dados:
 
-- SQL: Transformação e modelagem dimensional.
+```
+[CSVs locais] → [GCS Bucket] → [BigQuery Bronze] → [BigQuery Silver] → [BigQuery Gold] → [Metabase]
+```
 
-## 🏗️ Arquitetura do Projeto
+### 🥉 Camada Bronze — Raw
 
-O projeto foi dividido em camadas para garantir a integridade dos dados:
+Os arquivos CSV são carregados no **Google Cloud Storage** e expostos no BigQuery como **External Tables**, sem nenhuma transformação. Todos os campos permanecem como `STRING`.
 
-### 🥉 Camada Bronze (Raw)
-Os dados originais (CSV) são ingeridos no Google Cloud Storage (GSC) e disponibilizados no BigQuery via External Tables.
+- Dataset BigQuery: `netflix_raw`
+- Fonte: [MovieLens Beliefs Dataset 2024](https://grouplens.org/datasets/movielens/ml_belief_2024/)
 
-Fonte: [MovieLens Dataset](https://grouplens.org/datasets/movielens/ml_belief_2024/).
+### 🥈 Camada Silver — Limpeza e Tipagem
 
-Processo: Criação de tabelas externas que apontam para os buckets no GCS.
+Os dados brutos da Bronze são transformados em **tabelas nativas** do BigQuery. Principais transformações:
 
+- Conversão de tipos: `STRING` → `INT64`, `FLOAT64`, `TIMESTAMP`
+- Tratamento de nulos com `SAFE_CAST` e `NULLIF`
+- Remoção de registros inválidos (user_id, movie_id ou rating nulos)
+- Extração do ano de lançamento via `REGEXP_EXTRACT`
+- União de duas fontes de ratings via `UNION ALL`
 
-### 🥈 Camada Silver (Limpeza / Processamento)
+- Dataset BigQuery: `netflix_analytical`
+- Tabelas: `dim_movies`, `fact_ratings`
 
-Na camada Silver, os dados brutos da Bronze são transformados em tabelas nativas do BigQuery. Algumas transformações realizadas:
+### 🥇 Camada Gold — Camada Analítica
 
-- Limpeza: Remoção de duplicatas e tratamento de caracteres especiais.
+Views criadas sobre a Silver para alimentar diretamente os dashboards no Metabase com KPIs e métricas de negócio calculadas:
 
-- Tipagem (Casting): Conversão de **STRING** para **INT64** ou **FLOAT64**.
+| View | Descrição |
+|---|---|
+| `vw_movies_kpis` | Média, total e desvio padrão de ratings por filme |
+| `vw_genre_performance` | Performance e volume de avaliações por gênero |
+| `vw_ratings_heatmap` | Volume de ratings por mês/ano |
+| `vw_top_movies` | Ranking dos filmes mais avaliados |
+| `vw_user_activity` | Atividade e engajamento por usuário |
+| `vw_scatter_popularity_vs_quality` | Filmes com 50+ avaliações (popularidade vs qualidade) |
 
-### 🥇 Camada Gold 
-Aqui, os dados são limpos também, transformados e modelados seguindo as regras de negócio para facilitar o consumo pelo Metabase.
+- Dataset BigQuery: `netflix_analytical`
 
-Transformações:
+---
 
-- Casting de tipos de dados (String para Int/Float).
+## ✅ Pré-requisitos
 
-- Extração do ano de lançamento do título usando REGEXP_EXTRACT.
+Antes de executar o projeto, certifique-se de ter instalado:
 
-- Cálculo de métricas agregadas (Média de avaliação, Desvio Padrão).
+- [VS Code](https://code.visualstudio.com/)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop)
+- [gcloud CLI](https://cloud.google.com/sdk/docs/install)
+- Conta no [Google Cloud Platform](https://cloud.google.com/) — novos usuários recebem **$300 de crédito gratuito**
+
+---
 
 ## 🚀 Como Executar o Projeto
 
-1. Configuração do GCP
+### 1. Baixar o Dataset
 
-- Crie um projeto no Google Cloud Console. **O Google Cloud oferece um crédito inicial de $300 para novos usuários (primeiro acesso), o que permite executar todo este projeto sem custos**
+Acesse [grouplens.org/datasets/movielens/ml_belief_2024](https://grouplens.org/datasets/movielens/ml_belief_2024/) e baixe o arquivo `ml_belief_2024_data_release_2.zip` (versão atualizada de fev/2025).
 
-- Crie um Bucket no Cloud Storage e faça o upload dos arquivos.csv
-
-- Configure uma Service Account com as permissões (BigQuery Data Viewer, BigQuery Job User, Storage Insights Viewer)
-
-2. Crie a camada Bronze pelo Bigquery. Nesta etapa, os dados são ingeridos diretamente do Google Cloud Storage como tabelas externas, mantendo o formato original (todos como STRING).Exemplo: tabela de filmes
-
+```bash
+unzip ml_belief_2024_data_release_2.zip -d data
 ```
-CREATE OR REPLACE EXTERNAL TABLE `project-12268d68-4dba-41b8-846.netflix_raw.raw_movies`
+
+### 2. Configurar o GCP
+
+```bash
+# Autenticar no GCP
+gcloud auth login
+
+# Definir o projeto ativo
+gcloud config set project netflix-pipeline-gcp
+```
+
+No [Google Cloud Console](https://console.cloud.google.com/):
+
+- Crie um **Bucket** no Cloud Storage (ex: `raw_movies_netflix`)
+- Crie a pasta `bronze_movies/` dentro do bucket
+- Faça upload de todos os arquivos `.csv` para `gs://raw_movies_netflix/bronze_movies/`
+- Crie uma **Service Account** com as permissões:
+  - `BigQuery Data Viewer`
+  - `BigQuery Job User`
+  - `BigQuery Metadata Viewer`
+  - `Storage Insights Viewer`
+- Gere e baixe o arquivo **JSON** da Service Account
+
+### 3. Camada Bronze — Tabelas Externas
+
+No editor do BigQuery, crie o dataset `netflix_raw` e execute os 6 SQLs da pasta `sql/bronze/`.
+
+> ⚠️ Substitua `netflix-pipeline-gcp` pelo ID do seu projeto GCP e `SEU_BUCKET` pelo nome do seu bucket em todos os arquivos SQL.
+
+Exemplo — `raw_movies.sql`:
+
+```sql
+CREATE OR REPLACE EXTERNAL TABLE `netflix-pipeline-gcp.netflix_raw.raw_movies`
 (
   movieId STRING,
   title   STRING,
   genres  STRING
 )
 OPTIONS (
-  format = 'CSV',
-  uris   = ['gs://raw_movies_netflix/bronze_movies/movies.csv'],
-  skip_leading_rows = 1,
+  format               = 'CSV',
+  uris                 = ['gs://SEU_BUCKET/bronze_movies/movies.csv'],
+  skip_leading_rows    = 1,
   allow_quoted_newlines = TRUE,
-  allow_jagged_rows = TRUE
+  allow_jagged_rows    = TRUE
 );
-
-```
-![alt text](image.png)
-
-3. Crie a camada Silver (Dimensões e Fatos) - Dimensão Filmes (dim_movies): Extrai o ano de lançamento do título usando Regex e converte os tipos de dados. 
-
-  - dim_movies:
-
 ```
 
-CREATE OR REPLACE TABLE `project-12268d68-4dba-41b8-846.netflix_analytical.dim_movies` AS
-SELECT
-  SAFE_CAST(movieId AS INT64) as movie_id,
-  CAST(title AS STRING) as title,
-  CAST(genres AS STRING) as genres,
-  SAFE_CAST(REGEXP_EXTRACT(CAST (title as STRING), r'\((\d{4})\)\s*$') as INT64) as release_year
-  from `project-12268d68-4dba-41b8-846.netflix_raw.raw_movies`;
-  
-  ```
+### 4. Camada Silver — Tabelas Nativas
 
-  - fact_ratings:
+Crie o dataset `netflix_analytical` e execute os SQLs da pasta `sql/silver/`:
 
+- `dim_movies.sql` — dimensão de filmes com ano extraído via REGEXP
+- `fact_ratings.sql` — fato de avaliações unificando duas fontes
 
-  ```
-  CREATE OR REPLACE TABLE `project-12268d68-4dba-41b8-846.netflix_analytical.fact_ratings` AS
-WITH all_ratings AS (
-  SELECT 
-    SAFE_CAST(NULLIF(userId, '') AS INT64) AS user_id,
-    SAFE_CAST(NULLIF(movieId, '') AS INT64) AS movie_id,
+### 5. Camada Gold — Views Analíticas
 
+Execute os 6 SQLs da pasta `sql/gold/` no dataset `netflix_analytical`.
 
-    -- remove NA/ null
-    SAFE_CAST(NULLIF(NULLIF(rating, 'NA'),'')AS FLOAT64) AS rating,
+### 6. Subir o Metabase com Docker
 
-    --aceita timestamp com ou sem timezone
-    COALESCE(
-      SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S%Ez', tstamp),
-      SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', tstamp)
-
-    ) AS rating_ts,
-
-    'user_rating_history' AS src
-
-  from  `project-12268d68-4dba-41b8-846.netflix_raw.raw_user_rating_history`
-
-  UNION ALL
-
-  select 
-    SAFE_CAST(NULLIF(userId,'') AS INT64) AS user_id,
-    SAFE_CAST(NULLIF(movieId,'') AS INT64) AS movie_id,
-
-    SAFE_CAST(NULLIF(NULLIF(rating, 'NA'),'')AS FLOAT64) AS rating,
-
-    COALESCE(
-      SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S%Ez', tstamp),
-      SAFE.PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', tstamp)
-
-    ) AS rating_ts,
-
-    'rating_for_additional_users' AS src
-
-  FROM `project-12268d68-4dba-41b8-846.netflix_raw.raw_ratings_for_additional_users`
-
-)
-
-SELECT
-  user_id,
-  movie_id,
-  rating,
-  rating_ts,
-  src 
-FROM all_ratings
-WHERE user_id IS NOT NULL
-  AND movie_id IS NOT NULL
-  AND rating IS NOT NULL
-  AND rating_ts IS NOT NULL;
-  
-  ```
-
-4. Crie a camada Gold (Views para Visualização)
-Views criadas para alimentar diretamente os dashboards no Metabase com KPIs calculados.
-
-```
-CREATE OR REPLACE VIEW `project-12268d68-4dba-41b8-846.netflix_analytical.vw_movies_kpis` AS
-( -- query -- )
-
-```
-
-5. Baixe o metabase com docker
-
-```
+```bash
+# Iniciar o container
 docker run -d -p 3000:3000 --name metabase metabase/metabase
+
+# Verificar se está rodando
+docker ps
+
+# Ver logs se necessário
+docker logs metabase
 ```
 
-6. Conecte o Metabase ao BigQuery
+Acesse [http://localhost:3000](http://localhost:3000) e configure:
 
-- Criei um service account no GCP:
+1. Crie a conta admin (primeiro acesso)
+2. Vá em **Admin → Databases → Add database → BigQuery**
+3. Informe o **Project ID** e faça upload do **Service Account JSON**
+4. Sincronize: **Admin → Databases → Sync database schema**
 
-- Permissões:
+### 7. Criar os Dashboards no Metabase
 
-  - BigQuery Data Viewer
-  - BigQuery Job User
-  - BigQuery Metadata Viewer
-  - Storage Insights Viewer
+Exemplos de visualizações:
 
-- Crie uma conexão no Metabase:
-
-  - No Metabase, acesse o Admin → Banco de dados → Adicionar banco de dados
-  - Selecione BigQuery
-  - Informe o Project ID e faça upload do Service Account JSON
-  - Sincronize: Admin → Banco de dados → Sync database schema
-
-7. Crie as Questions no metabase (gráficos)
-
-Exemplos de visualizações criadas:
-- Evolução de ratings ao longo do tempo (Heatmap)
-- Ranking de filmes - top 10 (Bar Chat)
-- Filmes mais avaliados - (Bar Chat)
-- Popularidade dos gêneros - (Bar Chat)
-
-![alt text](image-10.png)
-![alt text](image-11.png)
-![alt text](image-12.png)
+- 📊 Evolução de ratings ao longo do tempo (Heatmap)
+- 🏆 Ranking Top 10 filmes mais bem avaliados (Bar Chart)
+- 🎬 Filmes mais avaliados (Bar Chart)
+- 🎭 Popularidade dos gêneros (Bar Chart)
+- 🔵 Popularidade vs Qualidade (Scatter Plot)
 
 ---
 
-## 👤 Autora : Andreza Santos
+## 👤 Autor
 
-Projeto desenvolvido como parte do **Desafio Técnico 01** da comunidade [**Dados Por Todos**](https://meadow-squid-e0b.notion.site/Desafio-t-cnico-01-Case-real-com-BigQuery-e-Metabase-8f920ba56c5a829e926481d46d4156c4)
+**William Sebastião**
 
----
+Projeto executado como parte do **Desafio Técnico 01** da comunidade [Dados Por Todos](https://meadow-squid-e0b.notion.site/Desafio-t-cnico-01-Case-real-com-BigQuery-e-Metabase-8f920ba56c5a829e926481d46d4156c4).
 
+Projeto original desenvolvido por [Andreza Santos](https://github.com/AndrezaSS/netflix-pipeline-gcp).
