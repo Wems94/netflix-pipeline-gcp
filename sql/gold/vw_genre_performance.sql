@@ -1,11 +1,11 @@
-CREATE OR REPLACE VIEW `project-12268d68-4dba-41b8-846.netflix_analytical.vw_genre_performance` AS
+CREATE OR REPLACE VIEW `netflix-pipeline-gcp.netflix_analytical.vw_genre_performance` AS
 WITH exploded AS (
   SELECT 
   r.rating,
   genre
 
-  FROM `project-12268d68-4dba-41b8-846.netflix_analytical.fact_ratings` r
-  JOIN `project-12268d68-4dba-41b8-846.netflix_analytical.dim_movies` m ON m.movie_id = r.movie_id
+  FROM `netflix-pipeline-gcp.netflix_analytical.fact_ratings` r
+  JOIN `netflix-pipeline-gcp.netflix_analytical.dim_movies` m ON m.movie_id = r.movie_id
   CROSS JOIN UNNEST (SPLIT(COALESCE(m.genres, ''), '|')) AS genre 
 )
 SELECT 

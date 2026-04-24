@@ -1,4 +1,4 @@
-CREATE OR REPLACE VIEW `project-12268d68-4dba-41b8-846.netflix_analytical.vw_movies_kpis` AS
+CREATE OR REPLACE VIEW `netflix-pipeline-gcp.netflix_analytical.vw_movies_kpis` AS
 SELECT
   r.movie_id,
   m.title,
@@ -10,5 +10,5 @@ SELECT
   min(r.rating_ts) AS first_rating_ts,
   max(r.rating_ts) AS last_rating_ts
 
-FROM `project-12268d68-4dba-41b8-846.netflix_analytical.fact_ratings` r
-LEFT JOIN `project-12268d68-4dba-41b8-846.netflix_analytical.dim_movies` m ON m.movie_id = r.movie_id GROUP BY 1,2,3,4;
+FROM `netflix-pipeline-gcp.netflix_analytical.fact_ratings` r
+LEFT JOIN `netflix-pipeline-gcp.netflix_analytical.dim_movies` m ON m.movie_id = r.movie_id GROUP BY 1,2,3,4;

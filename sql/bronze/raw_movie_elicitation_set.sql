@@ -1,4 +1,4 @@
-CREATE OR REPLACE EXTERNAL TABLE `project-12268d68-4dba-41b8-846.netflix_raw.raw_movie_elicitation_set`
+CREATE OR REPLACE EXTERNAL TABLE `netflix-pipeline-gcp.netflix_raw.raw_movie_elicitation_set`
 (
   movieId STRING,
   title   STRING,

@@ -1,4 +1,4 @@
-CREATE OR REPLACE TABLE `project-12268d68-4dba-41b8-846.netflix_analytical.fact_ratings` AS
+CREATE OR REPLACE TABLE `netflix-pipeline-gcp.netflix_analytical.fact_ratings` AS
 WITH all_ratings AS (
   SELECT 
     SAFE_CAST(NULLIF(userId, '') AS INT64) AS user_id,
@@ -17,7 +17,7 @@ WITH all_ratings AS (
 
     'user_rating_history' AS src
 
-  from  `project-12268d68-4dba-41b8-846.netflix_raw.raw_user_rating_history`
+  from  `netflix-pipeline-gcp.netflix_raw.raw_user_rating_history`
 
   UNION ALL
 
@@ -35,7 +35,7 @@ WITH all_ratings AS (
 
     'rating_for_additional_users' AS src
 
-  FROM `project-12268d68-4dba-41b8-846.netflix_raw.raw_ratings_for_additional_users`
+  FROM `netflix-pipeline-gcp.netflix_raw.raw_ratings_for_additional_users`
 
 )
 
