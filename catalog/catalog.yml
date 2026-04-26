@@ -84,8 +84,40 @@ silver:
       rating_ts: Timestamp da avaliação convertido para TIMESTAMP.
       src: Fonte da avaliação. 'user_rating_history' ou 'rating_for_additional_users'.
 
+  fact_belief_data:
+    description: Dados de crenças elicitadas — ratings esperados e certeza dos usuários para filmes não assistidos.
+    columns:
+      user_id: Identificador anônimo do usuário (INT64).
+      movie_id: Identificador do filme (INT64).
+      is_seen: Se o filme foi assistido. -1=sem resposta, 0=não assistiu, 1=assistiu.
+      watch_date: Data em que o usuário assistiu ao filme (preenchido só se is_seen=1).
+      user_elicit_rating: Nota real do usuário (preenchido só se is_seen=1).
+      user_predict_rating: Nota esperada do usuário (preenchido só se is_seen=0).
+      user_certainty: Certeza do usuário sobre o rating esperado, escala de 1.0 a 5.0.
+      belief_ts: Timestamp da elicitação convertido para TIMESTAMP.
+      month_idx: Índice do mês em que o filme foi incluído no conjunto de elicitação.
+      source: Origem do filme. 1=amostragem ampla, 2=com possível recomendação, 3=filmes novos.
+      system_predict_rating: Rating previsto pelo sistema de recomendação.
+
+  fact_recommendation_history:
+    description: Histórico de recomendações exibidas pelo sistema com rating previsto.
+    columns:
+      user_id: Identificador anônimo do usuário (INT64).
+      recommendation_ts: Timestamp da recomendação convertido para TIMESTAMP.
+      movie_id: Identificador do filme recomendado (INT64).
+      predicted_rating: Rating previsto pelo sistema de recomendação (FLOAT64).
+
+  dim_movie_elicitation:
+    description: Conjunto de filmes utilizados no processo de elicitação com critério de seleção decodificado.
+    columns:
+      movie_id: Identificador do filme (INT64).
+      month_idx: Índice do mês em que o filme fez parte do conjunto de elicitação.
+      source: Critério numérico de seleção (1-5).
+      source_label: Rótulo legível do critério (ex. Popularidade, Rating).
+      elicitation_ts: Timestamp da atualização do conjunto de elicitação.
+
 # ==============================================================
-# CAMADA GOLD — Views analíticas para o Metabase
+# CAMADA GOLD — Tabelas analíticas para o Metabase
 # ==============================================================
 gold:
 
@@ -144,3 +176,36 @@ gold:
       genres: Gêneros do filme.
       total_rating: Total de avaliações recebidas (mínimo 50).
       avg_rating: Média das avaliações do filme.
+
+  vw_recommendation_accuracy:
+    description: Acurácia do sistema de recomendação por filme — MAE e RMSE entre rating previsto e real.
+    columns:
+      movie_id: Identificador do filme.
+      title: Título do filme.
+      genres: Gêneros do filme.
+      total_predictions: Total de predições comparadas com avaliações reais.
+      mae: Erro absoluto médio entre rating previsto e real.
+      rmse: Raiz do erro quadrático médio entre rating previsto e real.
+      avg_predicted: Média dos ratings previstos pelo sistema.
+      avg_actual: Média dos ratings reais dos usuários.
+
+  vw_user_cohort_analysis:
+    description: Análise de coorte de usuários por mês de primeira avaliação — retenção e engajamento ao longo do tempo.
+    columns:
+      cohort_month: Mês da primeira avaliação do grupo de usuários.
+      months_since_cohort: Meses decorridos desde o mês de coorte.
+      active_users: Usuários ativos no período.
+      total_ratings: Total de avaliações feitas pelo coorte no período.
+
+  vw_belief_vs_reality:
+    description: Gap entre rating esperado antes de assistir e rating real após assistir.
+    columns:
+      user_id: Identificador do usuário.
+      movie_id: Identificador do filme.
+      title: Título do filme.
+      genres: Gêneros do filme.
+      expected_rating: Rating que o usuário esperava dar antes de assistir.
+      actual_rating: Rating que o usuário deu após assistir.
+      user_certainty: Certeza do usuário sobre o rating esperado.
+      expectation_gap: Diferença entre rating real e esperado (positivo = melhor que esperado).
+      abs_expectation_gap: Magnitude absoluta da diferença de expectativa.
