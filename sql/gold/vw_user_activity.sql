@@ -8,5 +8,4 @@ SELECT
   MIN(rating_ts) AS fist_activity_ts,
   MAX(rating_ts) AS last_activity_ts
 FROM `netflix-pipeline-gcp.netflix_analytical.fact_ratings`
-GROUP BY 1
-ORDER BY total_rating DESC, avg_rating DESC;
+GROUP BY 1;

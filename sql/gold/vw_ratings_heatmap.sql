@@ -5,5 +5,4 @@ SELECT
   FORMAT_TIMESTAMP('%b', rating_ts) AS month_name,
   COUNT(*) AS total_ratings
 FROM `netflix-pipeline-gcp.netflix_analytical.fact_ratings`
-GROUP BY year, month_number, month_name
-ORDER BY year, month_number;
+GROUP BY year, month_number, month_name;

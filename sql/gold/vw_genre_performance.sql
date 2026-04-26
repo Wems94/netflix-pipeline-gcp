@@ -17,5 +17,4 @@ SELECT
 WHERE genre IS NOT NULL
   AND genre != ''
   AND genre != '(no genres listed)'
-GROUP BY 1
-ORDER BY total_ratings DESC, avg_rating DESC;
+GROUP BY 1;
