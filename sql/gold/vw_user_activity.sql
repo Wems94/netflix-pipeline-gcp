@@ -1,3 +1,5 @@
+DROP VIEW IF EXISTS `netflix-pipeline-gcp.netflix_analytical.vw_user_activity`;
+
 CREATE OR REPLACE TABLE `netflix-pipeline-gcp.netflix_analytical.vw_user_activity` AS
 SELECT
   user_id,

@@ -1,3 +1,5 @@
+DROP VIEW IF EXISTS `netflix-pipeline-gcp.netflix_analytical.vw_movies_kpis`;
+
 CREATE OR REPLACE TABLE `netflix-pipeline-gcp.netflix_analytical.vw_movies_kpis` AS
 SELECT
   r.movie_id,
