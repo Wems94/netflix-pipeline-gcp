@@ -1,5 +1,3 @@
-DROP VIEW IF EXISTS `netflix-pipeline-gcp.netflix_analytical.vw_ratings_heatmap`;
-
 CREATE OR REPLACE TABLE `netflix-pipeline-gcp.netflix_analytical.vw_ratings_heatmap` AS
 SELECT
   EXTRACT(YEAR FROM rating_ts)      AS year,

@@ -1,5 +1,3 @@
-DROP VIEW IF EXISTS `netflix-pipeline-gcp.netflix_analytical.vw_genre_performance`;
-
 CREATE OR REPLACE TABLE `netflix-pipeline-gcp.netflix_analytical.vw_genre_performance` AS
 WITH exploded AS (
   SELECT
