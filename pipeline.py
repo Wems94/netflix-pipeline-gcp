@@ -1,34 +1,38 @@
 import os
+import logging
+import time
 import yaml
+from datetime import datetime, timezone
 from google.cloud import bigquery
 from google.oauth2 import service_account
 
-# ============================================================
-# CONFIGURAÇÕES
-# ============================================================
-PROJECT_ID       = "netflix-pipeline-gcp"
-CREDENTIALS_PATH = os.path.expanduser("~/.config/gcp/netflix-pipeline-sa.json")
-SQL_DIR          = os.path.join(os.path.dirname(__file__), "sql")
-CATALOG_PATH     = os.path.join(os.path.dirname(__file__), "catalog", "catalog.yml")
-
-# ============================================================
-# CONEXÃO COM O BIGQUERY
-# ============================================================
-credentials = service_account.Credentials.from_service_account_file(
-    CREDENTIALS_PATH,
-    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
+logger = logging.getLogger(__name__)
 
-client = bigquery.Client(project=PROJECT_ID, credentials=credentials)
+PROJECT_ID   = "netflix-pipeline-gcp"
+SQL_DIR      = os.path.join(os.path.dirname(__file__), "sql")
+CATALOG_PATH = os.path.join(os.path.dirname(__file__), "catalog", "catalog.yml")
 
-# ============================================================
-# CARREGA O CATÁLOGO
-# ============================================================
 with open(CATALOG_PATH, "r") as f:
     catalog = yaml.safe_load(f)
 
-# Mapeia nome da tabela para suas descrições no catálogo
-# Ex: "raw_movies" -> { description: ..., columns: { movieId: ... } }
+
+def get_client() -> bigquery.Client:
+    credentials_path = os.getenv(
+        "GCP_SA_KEY_PATH",
+        os.path.expanduser("~/.config/gcp/netflix-pipeline-sa.json"),
+    )
+    credentials = service_account.Credentials.from_service_account_file(
+        credentials_path,
+        scopes=["https://www.googleapis.com/auth/cloud-platform"],
+    )
+    return bigquery.Client(project=PROJECT_ID, credentials=credentials)
+
+
 def buscar_catalogo(nome_tabela: str) -> dict:
     for camada in ["bronze", "silver", "gold"]:
         tabelas = catalog.get(camada, {})
@@ -36,52 +40,69 @@ def buscar_catalogo(nome_tabela: str) -> dict:
             return tabelas[nome_tabela]
     return {}
 
-# ============================================================
-# FUNÇÕES AUXILIARES
-# ============================================================
-def criar_dataset(dataset_id: str):
-    """Cria um dataset no BigQuery se ele ainda não existir."""
+
+def criar_dataset(client: bigquery.Client, dataset_id: str):
     dataset_ref = f"{PROJECT_ID}.{dataset_id}"
     dataset = bigquery.Dataset(dataset_ref)
     dataset.location = "US"
     client.create_dataset(dataset, exists_ok=True)
-    print(f"✅ Dataset '{dataset_id}' pronto.")
+    logger.info("Dataset '%s' pronto.", dataset_id)
 
 
-def aplicar_descricoes(dataset_id: str, nome_tabela: str):
-    """Aplica descrições da tabela e colunas usando o catálogo YAML."""
+def garantir_tabela_controle(client: bigquery.Client):
+    schema = [
+        bigquery.SchemaField("run_ts",     "TIMESTAMP"),
+        bigquery.SchemaField("status",     "STRING"),
+        bigquery.SchemaField("duration_s", "FLOAT64"),
+        bigquery.SchemaField("error",      "STRING"),
+    ]
+    table_ref = f"{PROJECT_ID}.netflix_raw.pipeline_runs"
+    table = bigquery.Table(table_ref, schema=schema)
+    client.create_table(table, exists_ok=True)
+
+
+def registrar_execucao(
+    client: bigquery.Client, status: str, duracao_s: float, erro: str = ""
+):
+    rows = [{
+        "run_ts":     datetime.now(timezone.utc).isoformat(),
+        "status":     status,
+        "duration_s": duracao_s,
+        "error":      erro,
+    }]
+    errors = client.insert_rows_json(
+        f"{PROJECT_ID}.netflix_raw.pipeline_runs", rows
+    )
+    if errors:
+        logger.warning("Falha ao registrar execucao: %s", errors)
+
+
+def aplicar_descricoes(client: bigquery.Client, dataset_id: str, nome_tabela: str):
     info = buscar_catalogo(nome_tabela)
     if not info:
         return
 
     table_ref = f"{PROJECT_ID}.{dataset_id}.{nome_tabela}"
-
     try:
         table = client.get_table(table_ref)
     except Exception:
-        return  # tabela não encontrada, pula
+        return
 
-    # Aplica descrição da tabela
     table.description = info.get("description", "")
-
-    # Aplica descrição das colunas
     colunas_catalogo = info.get("columns", {})
-    novos_campos = []
-    for campo in table.schema:
-        descricao = colunas_catalogo.get(campo.name, "")
-        novo_campo = campo.from_api_repr({
+    novos_campos = [
+        campo.from_api_repr({
             **campo.to_api_repr(),
-            "description": descricao
+            "description": colunas_catalogo.get(campo.name, ""),
         })
-        novos_campos.append(novo_campo)
-
+        for campo in table.schema
+    ]
     table.schema = novos_campos
     client.update_table(table, ["description", "schema"])
-    print(f"  📋 Descrições aplicadas: {nome_tabela}")
+    logger.info("Descricoes aplicadas: %s", nome_tabela)
 
 
-def executar_sqls_da_pasta(pasta: str, dataset_id: str):
-    """Lê, executa todos os arquivos .sql de uma pasta e aplica descrições."""
+def executar_sqls_da_pasta(client: bigquery.Client, pasta: str, dataset_id: str):
     caminho = os.path.join(SQL_DIR, pasta)
     arquivos = sorted([f for f in os.listdir(caminho) if f.endswith(".sql")])
 
@@ -90,40 +111,46 @@ def executar_sqls_da_pasta(pasta: str, dataset_id: str):
         with open(caminho_arquivo, "r") as f:
             query = f.read()
 
-        print(f"  ▶ Executando: {arquivo}")
-        job = client.query(query)
-        job.result()  # aguarda a conclusão
-        print(f"  ✅ Concluído: {arquivo}")
+        logger.info("Executando: %s", arquivo)
+        try:
+            job = client.query(query)
+            job.result()
+            logger.info("Concluido: %s", arquivo)
+        except Exception as e:
+            logger.error("Falha ao executar %s: %s", arquivo, e)
+            raise
 
-        # Aplica descrições logo após a criação
         nome_tabela = arquivo.replace(".sql", "")
-        aplicar_descricoes(dataset_id, nome_tabela)
+        aplicar_descricoes(client, dataset_id, nome_tabela)
 
 
-# ============================================================
-# PIPELINE PRINCIPAL
-# ============================================================
 def main():
-    print("\n🚀 Iniciando pipeline Netflix...\n")
+    logger.info("Iniciando pipeline Netflix...")
+    client = get_client()
+    inicio = time.time()
 
-    # 1. Criar datasets
-    print("📦 Criando datasets...")
-    criar_dataset("netflix_raw")
-    criar_dataset("netflix_analytical")
+    try:
+        criar_dataset(client, "netflix_raw")
+        criar_dataset(client, "netflix_analytical")
+        garantir_tabela_controle(client)
 
-    # 2. Camada Bronze
-    print("\n🥉 Executando camada Bronze...")
-    executar_sqls_da_pasta("bronze", "netflix_raw")
+        logger.info("Camada Bronze...")
+        executar_sqls_da_pasta(client, "bronze", "netflix_raw")
 
-    # 3. Camada Silver
-    print("\n🥈 Executando camada Silver...")
-    executar_sqls_da_pasta("silver", "netflix_analytical")
+        logger.info("Camada Silver...")
+        executar_sqls_da_pasta(client, "silver", "netflix_analytical")
 
-    # 4. Camada Gold
-    print("\n🥇 Executando camada Gold...")
-    executar_sqls_da_pasta("gold", "netflix_analytical")
+        logger.info("Camada Gold...")
+        executar_sqls_da_pasta(client, "gold", "netflix_analytical")
 
-    print("\n🎉 Pipeline concluído com sucesso!")
+        duracao = time.time() - inicio
+        registrar_execucao(client, "SUCCESS", duracao)
+        logger.info("Pipeline concluido em %.1fs.", duracao)
+
+    except Exception as e:
+        duracao = time.time() - inicio
+        registrar_execucao(client, "FAILED", duracao, str(e))
+        raise
 
 
 if __name__ == "__main__":

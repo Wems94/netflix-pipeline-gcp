@@ -1,25 +1,37 @@
 import os
+import logging
 from datetime import datetime, timezone
 from google.cloud import bigquery
 from google.oauth2 import service_account
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
 # ============================================================
 # CONFIGURAÇÕES
 # ============================================================
-PROJECT_ID       = "netflix-pipeline-gcp"
-CREDENTIALS_PATH = os.path.expanduser("~/.config/gcp/netflix-pipeline-sa.json")
-PRECO_POR_TB     = 5.0  # USD por TB processado (política do BigQuery)
-CREDITO_INICIAL  = 300.0  # USD de crédito gratuito do GCP
+PROJECT_ID      = "netflix-pipeline-gcp"
+PRECO_POR_TB    = 5.0    # USD por TB processado (política do BigQuery)
+CREDITO_INICIAL = 300.0  # USD de crédito gratuito do GCP
 
-# ============================================================
-# CONEXÃO COM O BIGQUERY
-# ============================================================
-credentials = service_account.Credentials.from_service_account_file(
-    CREDENTIALS_PATH,
-    scopes=["https://www.googleapis.com/auth/cloud-platform"]
-)
 
-client = bigquery.Client(project=PROJECT_ID, credentials=credentials)
+def get_client() -> bigquery.Client:
+    credentials_path = os.getenv(
+        "GCP_SA_KEY_PATH",
+        os.path.expanduser("~/.config/gcp/netflix-pipeline-sa.json"),
+    )
+    credentials = service_account.Credentials.from_service_account_file(
+        credentials_path,
+        scopes=["https://www.googleapis.com/auth/cloud-platform"],
+    )
+    return bigquery.Client(project=PROJECT_ID, credentials=credentials)
+
+
+client = get_client()
 
 # ============================================================
 # FUNÇÕES
@@ -48,17 +60,17 @@ def buscar_jobs_do_dia() -> list:
     return list(jobs)
 
 def gerar_relatorio():
-    print("\n" + "="*60)
-    print("📊 RELATÓRIO DE CUSTO — NETFLIX PIPELINE GCP")
-    print("="*60)
-    print(f"🕐 Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-    print(f"📁 Projeto: {PROJECT_ID}")
-    print("="*60)
+    logger.info("=" * 60)
+    logger.info("RELATORIO DE CUSTO - NETFLIX PIPELINE GCP")
+    logger.info("=" * 60)
+    logger.info("Gerado em: %s", datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+    logger.info("Projeto: %s", PROJECT_ID)
+    logger.info("=" * 60)
 
     jobs = buscar_jobs_do_dia()
 
     if not jobs:
-        print("\n⚠️  Nenhum job encontrado hoje.")
+        logger.warning("Nenhum job encontrado hoje.")
         return
 
     total_bytes = 0
@@ -84,33 +96,29 @@ def gerar_relatorio():
             "tamanho" : formatar_tamanho(bytes_processados),
             "custo"   : custo,
             "duracao" : f"{duracao:.1f}s" if duracao else "N/A",
-            "estado"  : job.state
+            "estado"  : job.state,
         })
 
-    # Exibe tabela de jobs
-    print(f"\n{'JOB ID':<25} {'DADOS':>10} {'CUSTO (USD)':>12} {'DURAÇÃO':>10} {'ESTADO':>10}")
-    print("-" * 70)
-    for l in linhas:
-        print(f"{l['job_id']:<25} {l['tamanho']:>10} ${l['custo']:>11.6f} {l['duracao']:>10} {l['estado']:>10}")
-
-    # Totais
     custo_total = calcular_custo(total_bytes)
-    print("-" * 70)
-    print(f"\n📦 Total de jobs executados : {total_jobs}")
-    print(f"💾 Total de dados processados: {formatar_tamanho(total_bytes)}")
-    print(f"💰 Custo total estimado      : ${custo_total:.6f} USD")
 
-    # Créditos
-    print("\n" + "="*60)
-    print("💳 CRÉDITOS GCP")
-    print("="*60)
-    print(f"🎁 Crédito inicial          : ${CREDITO_INICIAL:.2f} USD")
-    print(f"💸 Consumido hoje           : ${custo_total:.6f} USD")
-    print(f"✅ Crédito restante estimado: ${CREDITO_INICIAL - custo_total:.6f} USD")
-    print("\n⚠️  Nota: O BigQuery oferece 1 TB gratuito por mês.")
-    print(f"   Acima disso, o custo é de ${PRECO_POR_TB}/TB processado.")
-    print("   O crédito restante é uma estimativa baseada apenas no BigQuery.")
-    print("="*60 + "\n")
+    logger.info("\n%-25s %10s %12s %10s %10s", "JOB ID", "DADOS", "CUSTO (USD)", "DURACAO", "ESTADO")
+    logger.info("-" * 70)
+    for l in linhas:
+        logger.info("%-25s %10s $%11.6f %10s %10s",
+                    l["job_id"], l["tamanho"], l["custo"], l["duracao"], l["estado"])
+
+    logger.info("-" * 70)
+    logger.info("Total de jobs executados : %d", total_jobs)
+    logger.info("Total de dados processados: %s", formatar_tamanho(total_bytes))
+    logger.info("Custo total estimado      : $%.6f USD", custo_total)
+    logger.info("=" * 60)
+    logger.info("CREDITOS GCP")
+    logger.info("Credito inicial          : $%.2f USD", CREDITO_INICIAL)
+    logger.info("Consumido hoje           : $%.6f USD", custo_total)
+    logger.info("Credito restante estimado: $%.6f USD", CREDITO_INICIAL - custo_total)
+    logger.info("Nota: O BigQuery oferece 1 TB gratuito por mes.")
+    logger.info("Acima disso, o custo e de $%.1f/TB processado.", PRECO_POR_TB)
+    logger.info("=" * 60)
 
 if __name__ == "__main__":
     gerar_relatorio()
