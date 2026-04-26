@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS `netflix-pipeline-gcp.netflix_analytical.fact_ratings`;
 
 CREATE OR REPLACE TABLE `netflix-pipeline-gcp.netflix_analytical.fact_ratings`
-PARTITION BY DATE_TRUNC(DATE(rating_ts), MONTH)
+PARTITION BY TIMESTAMP_TRUNC(rating_ts, MONTH)
 CLUSTER BY movie_id, user_id
 AS
 WITH all_ratings AS (
