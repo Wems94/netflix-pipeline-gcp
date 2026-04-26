@@ -20,6 +20,9 @@ Pipeline de dados ponta a ponta utilizando o dataset **MovieLens Beliefs 2024** 
 
 ```
 netflix-pipeline-gcp/
+├── .github/
+│   └── workflows/
+│       └── ci.yml               # CI — lint Python (ruff) e SQL (sqlfluff)
 ├── catalog/
 │   └── catalog.yml              # Catálogo de dados (descrição de tabelas e colunas)
 ├── data/                        # Dataset local (não versionado)
@@ -38,18 +41,26 @@ netflix-pipeline-gcp/
 │   │   ├── raw_ratings_for_additional_users.sql
 │   │   ├── raw_movie_elicitation_set.sql
 │   │   └── raw_user_recommendation_history.sql
-│   ├── silver/                  # Tabelas nativas (limpas e tipadas)
+│   ├── silver/                  # Tabelas nativas (limpas, tipadas e deduplicadas)
 │   │   ├── dim_movies.sql
-│   │   └── fact_ratings.sql
-│   └── gold/                    # Views analíticas para o Metabase
+│   │   ├── dim_movie_elicitation.sql
+│   │   ├── fact_ratings.sql
+│   │   ├── fact_belief_data.sql
+│   │   └── fact_recommendation_history.sql
+│   └── gold/                    # Tabelas analíticas materializadas para o Metabase
 │       ├── vw_movies_kpis.sql
 │       ├── vw_genre_performance.sql
 │       ├── vw_ratings_heatmap.sql
 │       ├── vw_top_movies.sql
 │       ├── vw_user_activity.sql
-│       └── vw_scatter_popularity_vs_quality.sql
-├── pipeline.py                  # Script de automação do pipeline
-├── cost_report.py               # Script de análise de custo e créditos GCP
+│       ├── vw_scatter_popularity_vs_quality.sql
+│       ├── vw_recommendation_accuracy.sql
+│       ├── vw_user_cohort_analysis.sql
+│       └── vw_belief_vs_reality.sql
+├── pipeline.py                  # Orquestrador do pipeline
+├── cost_report.py               # Relatório de custo e créditos GCP
+├── requirements.txt             # Dependências Python com versões pinadas
+├── Makefile                     # Comandos padronizados do projeto
 ├── movielens_dataset_readme.md  # Documentação do dataset
 └── README.md
 ```
@@ -67,6 +78,9 @@ netflix-pipeline-gcp/
 | **SQL** | Transformação e modelagem dimensional |
 | **Python** | Automação do pipeline e relatório de custos |
 | **gcloud CLI** | Gerenciamento do GCP via terminal |
+| **ruff** | Linter Python |
+| **sqlfluff** | Linter SQL (dialeto BigQuery) |
+| **GitHub Actions** | CI/CD — lint automático a cada push |
 
 ---
 
@@ -85,33 +99,45 @@ Os arquivos CSV são carregados no **Google Cloud Storage** e expostos no BigQue
 - Dataset BigQuery: `netflix_raw`
 - Fonte: [MovieLens Beliefs Dataset 2024](https://grouplens.org/datasets/movielens/ml_belief_2024/)
 
-### 🥈 Camada Silver — Limpeza e Tipagem
+### 🥈 Camada Silver — Limpeza, Tipagem e Modelagem
 
 Os dados brutos da Bronze são transformados em **tabelas nativas** do BigQuery. Principais transformações:
 
-- Conversão de tipos: `STRING` → `INT64`, `FLOAT64`, `TIMESTAMP`
+- Conversão de tipos: `STRING` → `INT64`, `FLOAT64`, `TIMESTAMP`, `DATE`
 - Tratamento de nulos com `SAFE_CAST` e `NULLIF`
-- Remoção de registros inválidos (user_id, movie_id ou rating nulos)
-- Extração do ano de lançamento via `REGEXP_EXTRACT`
-- União de duas fontes de ratings via `UNION ALL`
+- Deduplicação via `QUALIFY ROW_NUMBER()`
+- Surrogate key determinística (MD5) em `fact_ratings`
+- Particionamento por mês (`TIMESTAMP_TRUNC`) e clustering em `fact_ratings`
+- Extração do ano de lançamento via `REGEXP_EXTRACT` em `dim_movies`
+- União de duas fontes de ratings via `UNION ALL` com deduplicação
 
-- Dataset BigQuery: `netflix_analytical`
-- Tabelas: `dim_movies`, `fact_ratings`
+Dataset BigQuery: `netflix_analytical`
 
-### 🥇 Camada Gold — Camada Analítica
-
-Views criadas sobre a Silver para alimentar diretamente os dashboards no Metabase com KPIs e métricas de negócio calculadas:
-
-| View | Descrição |
+| Tabela | Descrição |
 |---|---|
-| `vw_movies_kpis` | Média, total e desvio padrão de ratings por filme |
+| `dim_movies` | Dimensão de filmes com tipos corrigidos, deduplicada por `movie_id` |
+| `dim_movie_elicitation` | Conjunto de filmes do processo de elicitação com critério decodificado |
+| `fact_ratings` | Avaliações unificadas, deduplicadas, particionadas por mês e com surrogate key |
+| `fact_belief_data` | Crenças elicitadas — ratings esperados antes de assistir |
+| `fact_recommendation_history` | Histórico de recomendações do sistema com rating previsto |
+
+### 🥇 Camada Gold — Tabelas Analíticas Materializadas
+
+Tabelas criadas sobre a Silver para alimentar diretamente os dashboards no Metabase. São **materializadas** (não views) para eliminar custo de reprocessamento a cada acesso.
+
+| Tabela | Descrição |
+|---|---|
+| `vw_movies_kpis` | Média, total, desvio padrão e timestamps de ratings por filme |
 | `vw_genre_performance` | Performance e volume de avaliações por gênero |
-| `vw_ratings_heatmap` | Volume de ratings por mês/ano |
+| `vw_ratings_heatmap` | Volume de ratings por mês e ano |
 | `vw_top_movies` | Ranking dos filmes mais avaliados |
 | `vw_user_activity` | Atividade e engajamento por usuário |
 | `vw_scatter_popularity_vs_quality` | Filmes com 50+ avaliações (popularidade vs qualidade) |
+| `vw_recommendation_accuracy` | MAE e RMSE do sistema de recomendação por filme |
+| `vw_user_cohort_analysis` | Retenção e engajamento de usuários por coorte de entrada |
+| `vw_belief_vs_reality` | Gap entre rating esperado antes de assistir e rating real |
 
-- Dataset BigQuery: `netflix_analytical`
+Dataset BigQuery: `netflix_analytical`
 
 ---
 
@@ -149,7 +175,7 @@ unzip ml_belief_2024_data_release_2.zip -d data
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install google-cloud-bigquery pyyaml
+pip install -r requirements.txt
 ```
 
 ### 4. Configurar o GCP
@@ -174,27 +200,39 @@ No [Google Cloud Console](https://console.cloud.google.com/):
   - `Storage Insights Collector Service`
 - Salve o arquivo **JSON** da Service Account em `~/.config/gcp/netflix-pipeline-sa.json`
 
+> Para usar um path alternativo, exporte a variável de ambiente antes de executar:
+> ```bash
+> export GCP_SA_KEY_PATH=/seu/caminho/credentials.json
+> ```
+
 ### 5. Executar o Pipeline
 
 ```bash
+# Via Makefile (recomendado)
+make pipeline
+
+# Ou diretamente
 python pipeline.py
 ```
 
-O script executa automaticamente todas as camadas na ordem correta e aplica as descrições do catálogo em cada tabela:
+O pipeline executa todas as camadas em ordem, aplica descrições do catálogo e registra cada execução na tabela `netflix_raw.pipeline_runs`:
 
 ```
-🚀 Iniciando pipeline Netflix...
-📦 Criando datasets...
-🥉 Executando camada Bronze...
-🥈 Executando camada Silver...
-🥇 Executando camada Gold...
-🎉 Pipeline concluído com sucesso!
+2026-04-26 20:04:16 [INFO] Iniciando pipeline Netflix...
+2026-04-26 20:04:17 [INFO] Dataset 'netflix_raw' pronto.
+2026-04-26 20:04:18 [INFO] Camada Bronze...
+2026-04-26 20:04:18 [INFO] Executando: raw_belief_data.sql
+...
+2026-04-26 20:05:32 [INFO] Camada Gold...
+...
+2026-04-26 20:06:10 [INFO] Pipeline concluido em 114.3s.
 ```
 
 ### 6. Analisar Custo e Créditos
 
 ```bash
-python cost_report.py
+make cost
+# ou: python cost_report.py
 ```
 
 Exibe um relatório com dados processados, custo estimado por job e créditos GCP restantes.
@@ -202,7 +240,8 @@ Exibe um relatório com dados processados, custo estimado por job e créditos GC
 ### 7. Subir o Metabase com Docker
 
 ```bash
-docker run -d -p 3000:3000 --name metabase metabase/metabase
+make metabase
+# ou: docker run -d -p 3000:3000 --name metabase metabase/metabase
 ```
 
 Acesse [http://localhost:3000](http://localhost:3000) e configure:
@@ -221,12 +260,37 @@ Exemplos de visualizações:
 - 🎬 Filmes mais avaliados (Bar Chart)
 - 🎭 Popularidade dos gêneros (Bar Chart)
 - 🔵 Popularidade vs Qualidade (Scatter Plot)
+- 🎯 Acurácia do sistema de recomendação — MAE e RMSE por filme
+- 📈 Análise de retenção de usuários por coorte
+- 🧠 Gap entre expectativa e realidade de ratings
+
+---
+
+## 🧰 Comandos Disponíveis (Makefile)
+
+```bash
+make pipeline    # Executa o pipeline completo
+make cost        # Exibe relatório de custo do dia
+make metabase    # Sobe o Metabase via Docker na porta 3000
+make lint        # Roda ruff (Python) + sqlfluff (SQL)
+make lint-py     # Lint apenas Python
+make lint-sql    # Lint apenas SQL
+```
 
 ---
 
 ## 📋 Catálogo de Dados
 
-O arquivo `catalog/catalog.yml` documenta todas as tabelas e colunas do projeto. As descrições são aplicadas automaticamente no BigQuery a cada execução do pipeline.
+O arquivo `catalog/catalog.yml` documenta todas as tabelas e colunas do projeto (Bronze, Silver e Gold). As descrições são aplicadas automaticamente no BigQuery a cada execução do pipeline.
+
+---
+
+## 🔁 CI/CD
+
+A cada push ou Pull Request na branch `main`, o GitHub Actions executa automaticamente:
+
+- **ruff** — lint e verificação de estilo do código Python
+- **sqlfluff** — lint dos arquivos SQL com dialeto BigQuery
 
 ---
 
