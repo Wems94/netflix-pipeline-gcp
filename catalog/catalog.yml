@@ -75,8 +75,9 @@ silver:
       release_year: Ano de lançamento extraído do título via REGEXP_EXTRACT (INT64).
 
   fact_ratings:
-    description: Fato de avaliações unificando duas fontes de ratings com limpeza e tipagem.
+    description: Fato de avaliações unificando duas fontes de ratings com limpeza, tipagem e deduplicação.
     columns:
+      rating_id: Surrogate key determinística (MD5) gerada a partir de user_id + movie_id + rating_ts.
       user_id: Identificador anônimo do usuário (INT64).
       movie_id: Identificador do filme avaliado (INT64).
       rating: Nota dada ao filme, escala de 0.5 a 5.0 (FLOAT64).
@@ -105,15 +106,16 @@ gold:
     description: Performance e volume de avaliações agrupados por gênero.
     columns:
       genre: Nome do gênero do filme.
-      total_movies: Total de filmes do gênero.
       total_ratings: Total de avaliações do gênero.
       avg_rating: Média das avaliações do gênero.
+      std_rating: Desvio padrão das avaliações do gênero.
 
   vw_ratings_heatmap:
     description: Volume de avaliações agrupado por mês e ano para visualização em heatmap.
     columns:
       year: Ano da avaliação.
-      month: Mês da avaliação.
+      month_number: Número do mês da avaliação (1-12).
+      month_name: Nome abreviado do mês (Jan, Feb, ...).
       total_ratings: Total de avaliações no período.
 
   vw_top_movies:
