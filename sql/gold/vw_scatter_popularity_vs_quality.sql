@@ -1,4 +1,4 @@
-CREATE OR REPLACE VIEW `netflix-pipeline-gcp.netflix_analytical.vw_scatter_popularity_vs_quality` AS
+CREATE OR REPLACE TABLE `netflix-pipeline-gcp.netflix_analytical.vw_scatter_popularity_vs_quality` AS
 SELECT
   movie_id,
   title,

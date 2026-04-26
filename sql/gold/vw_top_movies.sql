@@ -1,4 +1,4 @@
-CREATE OR REPLACE VIEW `netflix-pipeline-gcp.netflix_analytical.vw_top_movies` AS
+CREATE OR REPLACE TABLE `netflix-pipeline-gcp.netflix_analytical.vw_top_movies` AS
 SELECT
   dm.movie_id,
   dm.title,
