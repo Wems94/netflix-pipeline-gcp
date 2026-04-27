@@ -53,7 +53,6 @@ def formatar_tamanho(bytes: int) -> str:
 
 def buscar_jobs_do_dia() -> list:
     """Busca todos os jobs executados hoje no projeto."""
-    hoje = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     jobs = client.list_jobs(all_users=True, min_creation_time=datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     ))
@@ -103,9 +102,9 @@ def gerar_relatorio():
 
     logger.info("\n%-25s %10s %12s %10s %10s", "JOB ID", "DADOS", "CUSTO (USD)", "DURACAO", "ESTADO")
     logger.info("-" * 70)
-    for l in linhas:
+    for row in linhas:
         logger.info("%-25s %10s $%11.6f %10s %10s",
-                    l["job_id"], l["tamanho"], l["custo"], l["duracao"], l["estado"])
+                    row["job_id"], row["tamanho"], row["custo"], row["duracao"], row["estado"])
 
     logger.info("-" * 70)
     logger.info("Total de jobs executados : %d", total_jobs)
