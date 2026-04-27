@@ -1,0 +1,6 @@
+[sqlfluff]
+dialect = bigquery
+max_line_length = 120
+# RF04: SOURCE is a raw dataset column name, not a SQL keyword usage
+# RF01: False positives on CTE column references in BigQuery
+exclude_rules = RF04, RF01
