@@ -86,11 +86,9 @@ netflix-pipeline-gcp/
 
 ## 🏗️ Arquitetura Medallion
 
-O projeto segue a arquitetura Medallion, dividida em três camadas que garantem rastreabilidade, qualidade e reusabilidade dos dados:
+![Arquitetura do Pipeline](docs/architecture.png)
 
-```
-[CSVs locais] → [GCS Bucket] → [BigQuery Bronze] → [BigQuery Silver] → [BigQuery Gold] → [Metabase]
-```
+O projeto segue a arquitetura Medallion, dividida em três camadas que garantem rastreabilidade, qualidade e reusabilidade dos dados:
 
 ### 🥉 Camada Bronze — Raw
 
